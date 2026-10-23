@@ -7,6 +7,7 @@ import argparse
 import ast
 import bisect
 import contextlib
+import fnmatch
 import io
 import json
 import os
@@ -575,6 +576,7 @@ def lint(text, filename="<stdin>", glossary=frozenset()):
 JS_EXTENSIONS = {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx"}
 CODE_EXTENSIONS = JS_EXTENSIONS | {".py"}
 GLOSSARY_FILE = "sge-glossary.json"
+IGNORE_FILE = "sge-ignore.json"
 HEADER_CAP = 3
 DOC_CAP = 5
 DIRECTIVE = re.compile(
@@ -1173,6 +1175,30 @@ def selftest():
             assert e.code == 2, e.code
         else:
             raise AssertionError("bad project glossary")
+
+        other = os.path.join(tmp, "other")
+        os.makedirs(os.path.join(other, "notes"))
+        note = os.path.join(other, "notes", "a.md")
+        kept = os.path.join(other, "b.md")
+        for path in (note, kept):
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("The **fan** is quiet.")
+        ignore = os.path.join(other, IGNORE_FILE)
+        with open(ignore, "w", encoding="utf-8") as fh:
+            fh.write('[{"rule": "bold-text", "path": "notes/*.md", "match": "**FAN**",'
+                     ' "reason": "Labels need bold."}]')
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert main([note]) == 0
+            assert main([kept]) == 1
+        with open(ignore, "w", encoding="utf-8") as fh:
+            fh.write('[{"rule": "bold-text"}]')
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                main([note])
+        except SystemExit as e:
+            assert e.code == 2, e.code
+        else:
+            raise AssertionError("ignore entry without a reason")
     assert _rule_list("passive-voice,present-perfect") == {"passive-voice", "present-perfect"}
     print("selftest OK")
 
@@ -1204,17 +1230,54 @@ def _glossary(path):
     return frozenset(t.lower() for t in terms)
 
 
-def project_glossary(path):
-    """Return the terms of the nearest sge-glossary.json in the folder of a file or above it."""
+def _nearest(path, name):
+    """Return the nearest file with this name in the folder of path or above it, or None."""
     folder = os.path.dirname(os.path.abspath(path))
     while True:
-        candidate = os.path.join(folder, GLOSSARY_FILE)
+        candidate = os.path.join(folder, name)
         if os.path.isfile(candidate):
-            return _glossary(candidate)
+            return candidate
         parent = os.path.dirname(folder)
         if parent == folder:
-            return frozenset()
+            return None
         folder = parent
+
+
+def project_glossary(path):
+    """Return the terms of the nearest sge-glossary.json, or an empty set."""
+    found = _nearest(path, GLOSSARY_FILE)
+    return _glossary(found) if found else frozenset()
+
+
+def _ignores(path):
+    """Read an ignore file: a JSON list of objects, each with a rule and a reason."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            entries = json.load(fh)
+    except (OSError, ValueError) as e:
+        raise argparse.ArgumentTypeError(f"cannot read ignore file {path}: {e}")
+    if not isinstance(entries, list) or not all(
+            isinstance(e, dict) and isinstance(e.get("rule"), str)
+            and isinstance(e.get("reason"), str) and e["reason"].strip() for e in entries):
+        raise argparse.ArgumentTypeError(
+            f"ignore file {path} must be a JSON list of objects with a rule and a reason")
+    return entries
+
+
+def apply_ignores(findings, path):
+    """Remove the findings that the nearest sge-ignore.json marks as false alarms."""
+    found = _nearest(path, IGNORE_FILE)
+    if not found:
+        return findings
+    entries = _ignores(found)
+    relative = os.path.relpath(os.path.abspath(path), os.path.dirname(found)).replace(os.sep, "/")
+
+    def ignored(f):
+        return any(e["rule"] == f["rule"]
+                   and fnmatch.fnmatch(relative, e.get("path", "*"))
+                   and e.get("match", f["match"]).lower() == f["match"].lower()
+                   for e in entries)
+    return [f for f in findings if not ignored(f)]
 
 
 def main(argv):
@@ -1248,13 +1311,13 @@ def main(argv):
         texts.append((sys.stdin.read(), "<stdin>"))
     for text, name in texts:
         check = lint_code if os.path.splitext(name)[1].lower() in CODE_EXTENSIONS else lint
-        glossary = args.glossary
-        if glossary is None:
-            try:
-                glossary = project_glossary(name if args.paths else os.path.join(os.getcwd(), name))
-            except argparse.ArgumentTypeError as e:
-                parser.error(str(e))
-        f, w, s = check(text, filename=name, glossary=glossary)
+        location = name if args.paths else os.path.join(os.getcwd(), name)
+        try:
+            glossary = project_glossary(location) if args.glossary is None else args.glossary
+            f, w, s = check(text, filename=name, glossary=glossary)
+            f = apply_ignores(f, location)
+        except argparse.ArgumentTypeError as e:
+            parser.error(str(e))
         for finding in f:
             if finding["sentence"] is not None:
                 finding["sentence"] += len(sentences)

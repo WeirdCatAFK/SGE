@@ -60,6 +60,19 @@ A project glossary is a file named `sge-glossary.json` that holds a JSON list of
 
 The checker has no list of approved words. It does not flag a word only because the word is unknown.
 
+## False alarms
+
+`sge-ignore.json` lists the findings that are false alarms. The checker and the hooks use the nearest file in the folder of each checked file or in a folder above it. The file holds a JSON list of entries:
+
+| Field | Needed | Effect |
+|---|---|---|
+| `rule` | yes | The rule of the finding to ignore |
+| `reason` | yes | Why the finding is a false alarm |
+| `path` | no | A glob pattern for the file path, relative to the folder of `sge-ignore.json`. Without it, the entry applies to all files. |
+| `match` | no | The flagged text. Without it, the entry applies to all findings of the rule. Case does not matter. |
+
+An entry without a reason is a usage error. Make each entry as narrow as possible.
+
 ## Comments in code
 
 The checker reads `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx` and `.py` files as code. It examines only the comments.

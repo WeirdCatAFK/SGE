@@ -30,6 +30,7 @@ def _findings(path):
     ext = os.path.splitext(path)[1].lower()
     check = sge_check.lint_code if ext in sge_check.CODE_EXTENSIONS else sge_check.lint
     findings, _, sentences = check(text, filename=path, glossary=sge_check.project_glossary(path))
+    findings = sge_check.apply_ignores(findings, path)
     return [((f["rule"], f["match"],
               "" if f["sentence"] is None else sentences[f["sentence"]]["text"]), f)
             for f in findings]
@@ -54,7 +55,7 @@ def _save(state, state_file):
 
 
 def snapshot(event, state_dir=STATE_DIR):
-    """Record the findings of a file before its first edit in this turn."""
+    """Record the findings of a file before its first edit in this turn, and mark the turn as edited."""
     path = (event.get("tool_input") or {}).get("file_path", "")
     if not path or not _checked(path):
         return None
@@ -63,19 +64,24 @@ def snapshot(event, state_dir=STATE_DIR):
     key = os.path.abspath(path)
     if key not in state["baseline"]:
         state["baseline"][key] = [list(k) for k, _ in _findings(key)]
-        _save(state, state_file)
+    state["edited"] = True
+    _save(state, state_file)
     return None
 
 
 def stop(event, state_dir=STATE_DIR):
     """Return a block decision while the edited files have new findings.
 
+    After a block, a reply with no new edits ends the turn: the reply explains the false alarms.
     shortcut: edits made with shell commands get no snapshot and no check. Add a Bash hook if that happens often.
     """
     state_file = _state_file(event, state_dir)
     if not os.path.exists(state_file):
         return None
     state = _load(state_file)
+    if state["blocks"] and not state.get("edited"):
+        os.remove(state_file)
+        return None
     new = []
     for path, old in state["baseline"].items():
         remaining = Counter(tuple(k) for k in old)
@@ -91,6 +97,7 @@ def stop(event, state_dir=STATE_DIR):
                                      f"after {MAX_BLOCKS} checks."}
         return None
     state["blocks"] += 1
+    state["edited"] = False
     _save(state, state_file)
     lines = [f"{f['file']}:{f['line']} {f['rule']} ({f['severity']}): {f['message']} [{f['match']}]"
              for f in new[:MAX_LINES]]
@@ -98,7 +105,8 @@ def stop(event, state_dir=STATE_DIR):
         lines.append(f"{len(new) - MAX_LINES} more findings are not shown.")
     return {"decision": "block",
             "reason": f"Standard Generated English found {len(new)} new findings in the files "
-                      "that you edited. Fix them. If a finding is a false alarm, say so in your reply.\n"
+                      "that you edited. Fix them. If a finding is a false alarm, add it to "
+                      f"{sge_check.IGNORE_FILE} with a reason and say so in your reply.\n"
                       + "\n".join(lines)}
 
 
@@ -125,9 +133,18 @@ def selftest():
         snapshot(event, tmp)
         write(doc, "Open it; close it.\n")
         assert stop(event, tmp)["decision"] == "block"
+        assert stop(event, tmp) is None
+        assert not os.path.exists(os.path.join(tmp, "t.json"))
+
+        snapshot(event, tmp)
+        write(doc, "Open it; close it.\n\nTurn it; lock it.\n")
         assert stop(event, tmp)["decision"] == "block"
+        snapshot(event, tmp)
+        assert stop(event, tmp)["decision"] == "block"
+        snapshot(event, tmp)
         assert "remain" in stop(event, tmp)["systemMessage"]
         assert stop(event, tmp) is None
+        write(doc, "The fan is quiet.\n")
 
         snapshot({"session_id": "t", "tool_input": {"file_path": os.path.join(tmp, "a.png")}}, tmp)
         assert not os.path.exists(os.path.join(tmp, "t.json"))
@@ -146,6 +163,16 @@ def selftest():
         event = {"session_id": "g", "tool_input": {"file_path": guide}}
         snapshot(event, tmp)
         write(guide, "Commence the test.\n")
+        assert stop(event, tmp) is None
+
+        memory = os.path.join(project, "memory")
+        os.makedirs(memory)
+        write(os.path.join(project, sge_check.IGNORE_FILE),
+              '[{"rule": "bold-text", "path": "memory/*.md", "reason": "Memory labels need bold."}]')
+        label = os.path.join(memory, "fact.md")
+        event = {"session_id": "m", "tool_input": {"file_path": label}}
+        snapshot(event, tmp)
+        write(label, "**Why:** the fan is quiet.\n")
         assert stop(event, tmp) is None
     print("selftest OK")
 

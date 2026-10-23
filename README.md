@@ -55,6 +55,22 @@ Put the technical terms of a project in `sge-glossary.json` at the repository ro
 
 The checker and the hooks use the nearest `sge-glossary.json` in the folder of each file or in a folder above it. A glossary term is not flagged as a word to avoid.
 
+### False alarms
+
+Mark a false alarm in `sge-ignore.json`, next to the glossary. Each entry needs a rule and a reason. A path glob and the flagged text make the entry narrower:
+
+```json
+[
+  {
+    "rule": "bold-text",
+    "path": "projects/*/memory/*.md",
+    "reason": "The memory format requires bold labels."
+  }
+]
+```
+
+`rules.md` describes each field.
+
 ## Verdicts
 
 | Verdict               | Condition                  | Exit code |
@@ -71,7 +87,8 @@ Two Claude Code hooks run the checker without a request:
 
 1. Before Claude edits a file for the first time in a turn, `snapshot` records the findings of that file.
 2. When Claude finishes a turn, `stop` checks each edited file. It blocks the end of the turn while the edits add findings. The findings that were in a file before the edit do not block the turn.
-3. After 2 blocks, `stop` lets the turn end and shows the number of findings that remain.
+3. After a block, a reply with no new edits ends the turn. The reply explains the false alarms.
+4. After 2 blocks, `stop` lets the turn end and shows the number of findings that remain.
 
 The hooks do not see edits that a shell command makes. Add them to `~/.claude/settings.json`:
 

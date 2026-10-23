@@ -33,5 +33,5 @@ The checker reads the technical terms of a project from `sge-glossary.json`, a J
 
 1. Fix each finding in the text and code that you changed.
 2. Write the findings that were in the files before your edit in your report. Do not fix them without approval.
-3. If a finding is a false alarm, write it in your report. Do not change the rules or the word list to stop it.
+3. If a finding is a false alarm, add a narrow entry with a reason to `sge-ignore.json` at the repository root, and write it in your report. Do not change the rules or the word list to stop it. `rules.md` gives the entry format.
 4. Run `sge_check.py --selftest` after each change to the checker.
