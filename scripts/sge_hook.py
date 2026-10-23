@@ -29,7 +29,7 @@ def _findings(path):
         text = fh.read()
     ext = os.path.splitext(path)[1].lower()
     check = sge_check.lint_code if ext in sge_check.CODE_EXTENSIONS else sge_check.lint
-    findings, _, sentences = check(text, filename=path)
+    findings, _, sentences = check(text, filename=path, glossary=sge_check.project_glossary(path))
     return [((f["rule"], f["match"],
               "" if f["sentence"] is None else sentences[f["sentence"]]["text"]), f)
             for f in findings]
@@ -136,6 +136,17 @@ def selftest():
         write(code, "x = 1  # explain\n")
         result = stop({"session_id": "t"}, tmp)
         assert "comment-not-allowed" in result["reason"], result
+        stop({"session_id": "t"}, tmp)
+        stop({"session_id": "t"}, tmp)
+
+        project = os.path.join(tmp, "project")
+        os.makedirs(project)
+        write(os.path.join(project, sge_check.GLOSSARY_FILE), '["commence"]')
+        guide = os.path.join(project, "guide.md")
+        event = {"session_id": "g", "tool_input": {"file_path": guide}}
+        snapshot(event, tmp)
+        write(guide, "Commence the test.\n")
+        assert stop(event, tmp) is None
     print("selftest OK")
 
 

@@ -25,7 +25,9 @@ Run this command in the repository before you report the work as done:
 git ls-files -m -o --exclude-standard -z -- '*.md' '*.py' '*.js' '*.jsx' '*.mjs' '*.cjs' '*.ts' '*.tsx' ':!:.claude/*' | xargs -0 -r python -I "$HOME/.claude/skills/standard-generated-english/scripts/sge_check.py"
 ```
 
-Outside a git repository, give the files as arguments. Add `--json` to get only the sentences that fail. Add `--glossary PATH` to permit the technical terms of a project.
+Outside a git repository, give the files as arguments. Add `--json` to get only the sentences that fail.
+
+The checker reads the technical terms of a project from `sge-glossary.json`, a JSON list at the repository root. Add a term only when it is a real technical term of the project. Write each added term in your report.
 
 ## Act on the findings
 

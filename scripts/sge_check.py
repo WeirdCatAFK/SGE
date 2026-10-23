@@ -574,6 +574,7 @@ def lint(text, filename="<stdin>", glossary=frozenset()):
 
 JS_EXTENSIONS = {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx"}
 CODE_EXTENSIONS = JS_EXTENSIONS | {".py"}
+GLOSSARY_FILE = "sge-glossary.json"
 HEADER_CAP = 3
 DOC_CAP = 5
 DIRECTIVE = re.compile(
@@ -1146,6 +1147,32 @@ def selftest():
                 assert e.code == 2, (bad, e.code)
             else:
                 raise AssertionError(bad)
+        project = os.path.join(tmp, "project")
+        os.makedirs(os.path.join(project, "docs"))
+        doc = os.path.join(project, "docs", "guide.md")
+        with open(doc, "w", encoding="utf-8") as fh:
+            fh.write("Commence the test.")
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert main([doc]) == 1
+        with open(os.path.join(project, GLOSSARY_FILE), "w", encoding="utf-8") as fh:
+            fh.write('["Commence"]')
+        assert project_glossary(doc) == frozenset({"commence"})
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert main([doc]) == 0
+        empty = os.path.join(tmp, "empty.json")
+        with open(empty, "w", encoding="utf-8") as fh:
+            fh.write("[]")
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert main(["--glossary", empty, doc]) == 1
+        with open(os.path.join(project, GLOSSARY_FILE), "w", encoding="utf-8") as fh:
+            fh.write('{"terms": []}')
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                main([doc])
+        except SystemExit as e:
+            assert e.code == 2, e.code
+        else:
+            raise AssertionError("bad project glossary")
     assert _rule_list("passive-voice,present-perfect") == {"passive-voice", "present-perfect"}
     print("selftest OK")
 
@@ -1177,6 +1204,19 @@ def _glossary(path):
     return frozenset(t.lower() for t in terms)
 
 
+def project_glossary(path):
+    """Return the terms of the nearest sge-glossary.json in the folder of a file or above it."""
+    folder = os.path.dirname(os.path.abspath(path))
+    while True:
+        candidate = os.path.join(folder, GLOSSARY_FILE)
+        if os.path.isfile(candidate):
+            return _glossary(candidate)
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            return frozenset()
+        folder = parent
+
+
 def main(argv):
     parser = argparse.ArgumentParser(
         prog="sge_check.py", allow_abbrev=False,
@@ -1185,8 +1225,9 @@ def main(argv):
                     "Reads stdin when no FILE is given.")
     parser.add_argument("paths", nargs="*", metavar="FILE")
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
-    parser.add_argument("--glossary", type=_glossary, default=frozenset(), metavar="PATH",
-                        help="JSON list of project technical terms that are permitted")
+    parser.add_argument("--glossary", type=_glossary, default=None, metavar="PATH",
+                        help="JSON list of permitted technical terms. Without it, the checker "
+                             f"uses the nearest {GLOSSARY_FILE} above each file")
     parser.add_argument("--disable", type=_rule_list, default=set(), metavar="RULES",
                         help="comma-separated rule IDs to silence")
     parser.add_argument("--selftest", action="store_true", help="run the built-in tests")
@@ -1207,7 +1248,13 @@ def main(argv):
         texts.append((sys.stdin.read(), "<stdin>"))
     for text, name in texts:
         check = lint_code if os.path.splitext(name)[1].lower() in CODE_EXTENSIONS else lint
-        f, w, s = check(text, filename=name, glossary=args.glossary)
+        glossary = args.glossary
+        if glossary is None:
+            try:
+                glossary = project_glossary(name if args.paths else os.path.join(os.getcwd(), name))
+            except argparse.ArgumentTypeError as e:
+                parser.error(str(e))
+        f, w, s = check(text, filename=name, glossary=glossary)
         for finding in f:
             if finding["sentence"] is not None:
                 finding["sentence"] += len(sentences)

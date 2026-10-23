@@ -41,9 +41,19 @@ Options:
 | Option              | Effect                                                       |
 | ------------------- | ------------------------------------------------------------ |
 | `--json`          | Prints the result as JSON, with only the sentences that fail |
-| `--glossary PATH` | Permits the technical terms in a JSON list                   |
+| `--glossary PATH` | Permits the technical terms in a JSON list, in place of `sge-glossary.json` |
 | `--disable RULES` | Turns off the rules in a comma-separated list                |
 | `--selftest`      | Runs the built-in tests                                      |
+
+### Project glossary
+
+Put the technical terms of a project in `sge-glossary.json` at the repository root:
+
+```json
+["leverage", "harness", "kerf"]
+```
+
+The checker and the hooks use the nearest `sge-glossary.json` in the folder of each file or in a folder above it. A glossary term is not flagged as a word to avoid.
 
 ## Verdicts
 

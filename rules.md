@@ -56,7 +56,7 @@ The list has these groups:
 
 The list does not include words that have a real meaning in technical work, such as `align`, `highlight`, `harness`, `overall` and `landscape`. For some of these words, the list holds only the LLM phrase, such as `evolving landscape`. When a word matches inside a longer phrase on the list, the checker reports only the phrase.
 
-A project glossary is a JSON list of technical terms. Give it with `--glossary PATH`. The checker does not flag a glossary term as a word to avoid.
+A project glossary is a file named `sge-glossary.json` that holds a JSON list of technical terms. The checker uses the nearest glossary in the folder of each file or in a folder above it. The hooks use it too. The `--glossary PATH` option replaces that glossary. The checker does not flag a glossary term as a word to avoid.
 
 The checker has no list of approved words. It does not flag a word only because the word is unknown.
 
