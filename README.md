@@ -55,6 +55,38 @@ Options:
 
 Exit code 2 means a usage error.
 
+## Automatic check
+
+Two Claude Code hooks run the checker without a request:
+
+1. Before Claude edits a file for the first time in a turn, `snapshot` records the findings of that file.
+2. When Claude finishes a turn, `stop` checks each edited file. It blocks the end of the turn while the edits add findings. The findings that were in a file before the edit do not block the turn.
+3. After 2 blocks, `stop` lets the turn end and shows the number of findings that remain.
+
+The hooks do not see edits that a shell command makes. Add them to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "timeout": 30,
+          "command": "python -I \"$HOME/.claude/skills/standard-generated-english/scripts/sge_hook.py\" snapshot" }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "timeout": 60,
+          "command": "python -I \"$HOME/.claude/skills/standard-generated-english/scripts/sge_hook.py\" stop" }]
+      }
+    ]
+  }
+}
+```
+
+Merge these entries into the hooks that you have. Run `sge_hook.py --selftest` to test the hooks.
+
 ## Credits
 
 The checker started as a fork of `ste-lint.py` from the asd-ste100 skill by Dustin Yuchen Teng. `LICENSE-ste-lint` holds its MIT license. SGE is a separate standard. It does not copy ASD-STE100 or its dictionary, and it does not claim compliance with ASD-STE100.
